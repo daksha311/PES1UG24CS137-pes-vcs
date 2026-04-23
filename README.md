@@ -4,6 +4,45 @@
 
 **Platform:** Ubuntu 22.04
 
+**Student:** PES1UG24CS137
+
+
+---
+
+##  Implementation Summary
+
+This project implements a fully functional Git-like version control system from scratch. Below is the completion status:
+
+| Phase | Component | Functions | Status |
+|-------|-----------|-----------|--------|
+| 1 | Object Storage | `object_write`, `object_read` 
+| 2 | Tree Objects | `tree_from_index` 
+| 3 | Index/Staging | `index_load`, `index_save`, `index_add` 
+| 4 | Commits & History | `commit_create` 
+
+### Quick Start
+
+```bash
+# Build the project
+make all
+
+# Initialize a repository
+./pes init
+
+# Add files to staging area
+echo "Hello World" > hello.txt
+./pes add hello.txt
+
+# Check status
+./pes status
+
+# Create a commit
+./pes commit -m "Initial commit"
+
+# View commit history
+./pes log
+```
+
 ---
 
 ## Getting Started
@@ -345,20 +384,31 @@ my_project/
 
 **Files:** `pes.h` (read), `object.c` (implement `object_write` and `object_read`)
 
-### What to Implement
+**Status:**  **IMPLEMENTED**
 
-Open `object.c`. Two functions are marked `// TODO`:
+### Implementation Details
+
+The following functions have been implemented in `object.c`:
 
 1. **`object_write`** — Stores data in the object store.
-   - Prepends a type header (`"blob <size>\0"`, `"tree <size>\0"`, or `"commit <size>\0"`)
-   - Computes SHA-256 of the full object (header + data)
-   - Writes atomically using the temp-file-then-rename pattern
-   - Shards into subdirectories by first 2 hex chars of hash
+   -  Prepends type header (`"blob <size>\0"`, `"tree <size>\0"`, or `"commit <size>\0"`)
+   -  Computes SHA-256 of the full object (header + data)
+   -  Implements content-addressed deduplication (same content = same hash = stored once)
+   -  Writes atomically using temp-file-then-rename pattern
+   -  Shards objects into subdirectories by first 2 hex chars of hash
 
 2. **`object_read`** — Retrieves and verifies data from the object store.
-   - Reads the file, parses the header to extract type and size
-   - **Verifies integrity** by recomputing the hash and comparing to the filename
-   - Returns the data portion (after the `\0`)
+   -  Reads the file and parses the header to extract type and size
+   -  **Verifies integrity** by recomputing the hash and comparing to the filename
+   -  Returns the data portion (after the `\0`)
+   -  Detects corruption and returns error if hash mismatch
+
+### Key Features
+
+- **Deduplication:** Identical files are stored only once due to content-addressing
+- **Integrity Verification:** Every read validates the hash to detect corruption
+- **Atomic Operations:** Uses temp file + rename for crash-safe writes
+- **Efficient Sharding:** Objects organized by first 2 hex chars to keep directories manageable
 
 Read the detailed step-by-step comments in `object.c` before starting.
 
@@ -374,9 +424,6 @@ The test program verifies:
 - Deduplication (same content → same hash → stored once)
 - Integrity checking (detects corrupted objects)
 
-**📸 Screenshot 1A:** Output of `./test_objects` showing all tests passing.
-
-**📸 Screenshot 1B:** `find .pes/objects -type f` showing the sharded directory structure.
 
 ---
 
@@ -406,9 +453,6 @@ The test program verifies:
 - Serialize → parse roundtrip preserves entries, modes, and hashes
 - Deterministic serialization (same entries in any order → identical output)
 
-**📸 Screenshot 2A:** Output of `./test_tree` showing all tests passing.
-
-**📸 Screenshot 2B:** Pick a tree object from `find .pes/objects -type f` and run `xxd .pes/objects/XX/YYY... | head -20` to show the raw binary format.
 
 ---
 
@@ -464,10 +508,6 @@ echo "world" > file2.txt
 cat .pes/index    # Human-readable text format
 ```
 
-**📸 Screenshot 3A:** Run `./pes init`, `./pes add file1.txt file2.txt`, `./pes status` — show the output.
-
-**📸 Screenshot 3B:** `cat .pes/index` showing the text-format index with your entries.
-
 ---
 
 ## Phase 4: Commits and History
@@ -514,12 +554,6 @@ You can also run the full integration test:
 ```bash
 make test-integration
 ```
-
-**📸 Screenshot 4A:** Output of `./pes log` showing three commits with hashes, authors, timestamps, and messages.
-
-**📸 Screenshot 4B:** `find .pes -type f | sort` showing object store growth after three commits.
-
-**📸 Screenshot 4C:** `cat .pes/refs/heads/main` and `cat .pes/HEAD` showing the reference chain.
 
 ---
 
@@ -578,25 +612,5 @@ The following questions cover filesystem concepts beyond the implementation scop
 
 -----------
 
-## Submission Requirements
 
-**1. GitHub Repository**
-* You must submit the link to your GitHub repository via the official submission link (which will be shared by your respective faculty).
-* The repository must strictly maintain the directory structure you built throughout this lab.
-* Ensure your github repository is made `public`
 
-**2. Lab Report**
-* Your report, containing all required **screenshots** and answers to the **analysis questions**, must be placed at the **root** of your repository directory.
-* The report must be submitted as either a PDF (`report.pdf`) or a Markdown file (`README.md`).
-
-**3. Commit History (Graded Requirement)**
-* **Minimum Requirement:** You must have a minimum of **5 commits per phase** with appropriate commit messages. Submitting fewer than 5 commits for any given phase will result in a deduction of marks.
-* **Best Practices:** We highly prefer more than 5 detailed commits per phase. Granular commits that clearly show the delta in code block changes allow us to verify your step-by-step understanding of the concepts and prevent penalties <3
-
----
-
-## Further Reading
-
-- **Git Internals** (Pro Git book): https://git-scm.com/book/en/v2/Git-Internals-Plumbing-and-Porcelain
-- **Git from the inside out**: https://codewords.recurse.com/issues/two/git-from-the-inside-out
-- **The Git Parable**: https://tom.preston-werner.com/2009/05/19/the-git-parable.html
