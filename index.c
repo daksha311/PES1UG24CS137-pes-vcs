@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 
@@ -135,10 +136,31 @@ int index_status(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_load(Index *index) {
-    // TODO: Implement index loading
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    index->count = 0;
+
+    FILE *f = fopen(INDEX_FILE, "r");
+    if (!f) return 0; // empty index
+
+    while (index->count < MAX_INDEX_ENTRIES) {
+        IndexEntry *e = &index->entries[index->count];
+        char hex[HASH_HEX_SIZE + 1];
+
+        if (fscanf(f, "%o %64s %lu %u %[^\n]\n",
+                   &e->mode, hex,
+                   &e->mtime_sec,
+                   &e->size,
+                   e->path) != 5)
+            break;
+
+        if (hex_to_hash(hex, &e->hash) != 0) {
+            fclose(f);
+            return -1;
+        }
+        index->count++;
+    }
+
+    fclose(f);
+    return 0;
 }
 
 // Save the index to .pes/index atomically.
@@ -151,11 +173,46 @@ int index_load(Index *index) {
 //   - rename                           : atomically moving the temp file over the old index
 //
 // Returns 0 on success, -1 on error.
+
+
+static int cmp_ptrs(const void *a, const void *b) {
+    const IndexEntry *ea = *(const IndexEntry**)a;
+    const IndexEntry *eb = *(const IndexEntry**)b;
+    return strcmp(ea->path, eb->path);
+}
 int index_save(const Index *index) {
-    // TODO: Implement atomic index saving
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    if (!index) return -1;
+
+    // Create array of pointers instead of copying full struct
+    IndexEntry *entries[MAX_INDEX_ENTRIES];
+
+    for (int i = 0; i < index->count; i++) {
+        entries[i] = (IndexEntry *)&index->entries[i];
+    }
+
+    // Sort pointers instead of struct copy
+    qsort(entries, index->count, sizeof(IndexEntry*), cmp_ptrs);
+
+    FILE *f = fopen(".pes/index.tmp", "w");
+    if (!f) return -1;
+
+    for (int i = 0; i < index->count; i++) {
+        char hex[HASH_HEX_SIZE + 1];
+        hash_to_hex(&entries[i]->hash, hex);
+
+        fprintf(f, "%o %s %lu %u %s\n",
+                entries[i]->mode,
+                hex,
+                entries[i]->mtime_sec,
+                entries[i]->size,
+                entries[i]->path);
+    }
+
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+
+    return rename(".pes/index.tmp", INDEX_FILE);
 }
 
 // Stage a file for the next commit.
@@ -168,8 +225,56 @@ int index_save(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_add(Index *index, const char *path) {
-    // TODO: Implement file staging
-    // (See Lab Appendix for logical steps)
-    (void)index; (void)path;
-    return -1;
+    if (!index || !path) return -1;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    // Get file size
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
+    long size = ftell(f);
+    if (size < 0) { fclose(f); return -1; }
+    rewind(f);
+
+    void *data = malloc(size);
+    if (!data) { fclose(f); return -1; }
+
+    if (fread(data, 1, size, f) != (size_t)size) {
+        fclose(f);
+        free(data);
+        return -1;
+    }
+    fclose(f);
+
+    // Write blob
+    ObjectID id;
+    if (object_write(OBJ_BLOB, data, size, &id) != 0) {
+        free(data);
+        return -1;
+    }
+
+    free(data);
+
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    IndexEntry *e = index_find(index, path);
+
+    if (!e) {
+        if (index->count >= MAX_INDEX_ENTRIES) {
+            fprintf(stderr, "index full\n");
+            return -1;
+        }
+        e = &index->entries[index->count++];
+    }
+
+    e->mode = st.st_mode;
+    e->hash = id;
+    e->mtime_sec = st.st_mtime;
+    e->size = st.st_size;
+
+    strncpy(e->path, path, sizeof(e->path) - 1);
+    e->path[sizeof(e->path) - 1] = '\0';
+
+    return index_save(index);
 }
