@@ -67,7 +67,8 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
     p = strchr(p, '\n') + 1;  // skip committer line
     p = strchr(p, '\n') + 1;  // skip blank line
 
-    snprintf(commit_out->message, sizeof(commit_out->message), "%s", p);
+    strncpy(commit_out->message, p, sizeof(commit_out->message) - 1);
+    commit_out->message[sizeof(commit_out->message) - 1] = '\0';
     return 0;
 }
 
@@ -194,8 +195,42 @@ int head_update(const ObjectID *new_commit) {
 //
 // Returns 0 on success, -1 on error.
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    Commit c;
+    memset(&c, 0, sizeof(c));
+
+    // 1. tree
+    if (tree_from_index(&c.tree) != 0) return -1;
+
+    // 2. parent
+    if (head_read(&c.parent) == 0) {
+        c.has_parent = 1;
+    } else {
+        c.has_parent = 0;
+    }
+
+    // 3. author
+    snprintf(c.author, sizeof(c.author), "%s", pes_author());
+
+    // 4. timestamp
+    c.timestamp = (uint64_t)time(NULL);
+
+    // 5. message
+    snprintf(c.message, sizeof(c.message), "%s", message);
+
+    // 6. serialize
+    void *data;
+    size_t len;
+    if (commit_serialize(&c, &data, &len) != 0) return -1;
+
+    // 7. write object
+    if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
+        free(data);
+        return -1;
+    }
+    free(data);
+
+    // 8. update HEAD
+    if (head_update(commit_id_out) != 0) return -1;
+
+    return 0;
 }
